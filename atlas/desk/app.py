@@ -771,9 +771,12 @@ def api_team_apply(did):
 
 # curated model catalogue for the landscape picker. `tools` = supports native tool-calling on OpenRouter.
 MODEL_CATALOG = [
+    {"id": "nvidia/nemotron-3-super-120b-a12b:free", "label": "Nemotron 3 Super (free)", "provider": "openrouter", "tools": True, "cost": "free tier", "engine": "atlas",
+     "note": "the free text default since 24 Sep 2026 (Ling 3.0 Flash VL free was withdrawn, MiniMax M3 free before it)"},
     {"id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "label": "Nemotron 3 Nano Omni (free, vision)", "provider": "openrouter", "tools": True, "vision": True, "cost": "free tier", "engine": "atlas",
-     "note": "the free default since 24 Sep 2026 (Ling 3.0 Flash VL free was withdrawn, MiniMax M3 free before it); reasoning switched off per request"},
-    {"id": "nvidia/nemotron-3-super-120b-a12b:free", "label": "Nemotron 3 Super (free)", "provider": "openrouter", "tools": True, "cost": "free tier", "engine": "atlas"},
+     "note": "free eyes (VISION_MODEL default); too flaky for chat - empty replies"},
+    {"id": "nex-agi/nex-n2.5-mini:free", "label": "Nex N2.5 Mini (free, vision)", "provider": "openrouter", "tools": True, "vision": True, "cost": "free tier", "engine": "atlas",
+     "note": "fallback_model when the free default is rate-limited or withdrawn"},
     {"id": "anthropic/claude-sonnet-4.5", "label": "Claude Sonnet 4.5", "provider": "openrouter", "tools": True, "vision": True, "cost": "≈£2.3/M in", "engine": "atlas", "paid": True},
     {"id": "anthropic/claude-haiku-4.5", "label": "Claude Haiku 4.5", "provider": "openrouter", "tools": True, "vision": True, "cost": "≈£0.8/M in", "engine": "atlas", "paid": True},
     {"id": "google/gemini-2.5-flash", "label": "Gemini 2.5 Flash (vision)", "provider": "openrouter", "tools": True, "vision": True, "cost": "≈£0.25/M in", "engine": "atlas", "paid": True,

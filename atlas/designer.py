@@ -43,6 +43,10 @@ How to run the conversation
   refine it every turn instead of asking ten questions first.
 - Prefer ONE function first (e.g. inbound lead handling, proposal writing, inbox triage, order follow-ups), then extras.
 - Every turn, state briefly what changed in the blueprint ("Added a research agent that…").
+- If the owner asks what you understood, what you are doing, or why - answer that directly in your own words (what
+  they told you, what you inferred, what you are unsure of), then ask your one question. Never answer with a stock line.
+- Do not invent a team from a greeting or a question. Sketch a blueprint only once the owner has said something about
+  their business or the work; until then "blueprint" is null.
 - When the design is solid (usually after 3-5 exchanges), set "ready": true and tell the owner to review the sketch
   and press Approve & build.
 
@@ -555,12 +559,24 @@ def _live_turn(session: DesignSession, providers_cfg: dict[str, Any] | None, mod
                     + chr(10) + '<atlas-design>{"suggestions": ["' + SWITCH_TO_PAID + '", "I will come back later"], "ready": false, "blueprint": null}</atlas-design>')
         return (f"The model did not answer ({err}). Say that again in a moment — the sketch so far is kept."
                 + chr(10) + '<atlas-design>{"suggestions": ["Continue"], "ready": false, "blueprint": null}</atlas-design>')
+    if not raw.strip():                                    # some free models return content="" - try the fallback model once
+        fallback = (getattr(prov, "cfg", {}) or {}).get("fallback_model") or ""
+        if fallback and fallback != model:
+            try:
+                r = prov.chat(system, msgs, [], fallback, on_token=tok)
+                raw = r.text or ""
+            except Exception as exc:
+                err = f"{type(exc).__name__}: {str(exc)[:160]}"
     if not raw.strip():
-        raw = ("Understood. Could you tell me a little more about who your customers are and how they reach you?"
-               + chr(10) + '<atlas-design>{"suggestions": ["Mostly by email", "Through our website form", "Phone and WhatsApp"], "ready": false, "blueprint": null}</atlas-design>')
-    # repair pass: the prose came back without a usable machine block -> ask for the block alone (not streamed)
+        return ("I did not get a reply from the model that time - nothing was lost. Say that again, or switch to the paid model."
+                + chr(10) + '<atlas-design>{"suggestions": ["Say it again", "' + SWITCH_TO_PAID + '"], "ready": false, "blueprint": null}</atlas-design>')
+    # repair pass: the prose came back without a usable machine block -> ask for the block alone (not streamed).
+    # Only once the owner has actually said something about the business (a greeting or "what did you understand"
+    # must not conjure a team).
     _, data = split_reply(raw)
-    if not (data and isinstance(data.get("blueprint"), dict)):        # every turn after the owner's first message deserves a sketch
+    said = " ".join(m["content"] for m in session.messages if m["role"] == "user" and isinstance(m["content"], str))
+    substantive = bool(session.blueprint) or bool(session.profile) or len(said.split()) >= 12
+    if substantive and not (data and isinstance(data.get("blueprint"), dict)):
         try:
             fix = prov.chat(system, msgs + [{"role": "assistant", "content": raw},
                                            prov.user_message("Output ONLY the <atlas-design>{...}</atlas-design> block, nothing else. "

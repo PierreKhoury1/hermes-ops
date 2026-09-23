@@ -37,7 +37,7 @@ from . import config as cfg
 MODELS_DIR = cfg.DATA_DIR / "models"
 SNAP_DIR = cfg.DATA_DIR / "snapshots"
 YOLO_WEIGHTS = os.environ.get("VISION_YOLO", str(MODELS_DIR / "yolov8n.pt"))
-DEFAULT_VLM = os.environ.get("VISION_MODEL", os.environ.get("ATLAS_FREE_MODEL", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"))   # free by default; set VISION_MODEL for paid eyes
+DEFAULT_VLM = os.environ.get("VISION_MODEL", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free")   # free by default; set VISION_MODEL for paid eyes
 DEFAULT_VLM_PROVIDER = os.environ.get("VISION_PROVIDER", "openrouter")
 MAX_SIDE = 960                      # frames are downscaled to this before detection / VLM
 FRAME_TIMEOUT = float(os.environ.get("VISION_GRAB_TIMEOUT", "12"))

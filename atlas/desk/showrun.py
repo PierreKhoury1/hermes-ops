@@ -17,7 +17,7 @@ from typing import Any, Callable
 
 from ..orchestrator import Event, Orchestrator
 
-FREE_MODEL = os.environ.get("SHOW_MODEL", os.environ.get("ATLAS_FREE_MODEL", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"))
+FREE_MODEL = os.environ.get("SHOW_MODEL", os.environ.get("ATLAS_FREE_MODEL", "nvidia/nemotron-3-super-120b-a12b:free"))
 IDLE_GAP = float(os.environ.get("SHOW_GAP_S", "75"))            # pause between runs while people watch
 MAX_RUN_S = float(os.environ.get("SHOW_MAX_RUN_S", "180"))      # hard stop per run
 VIEWER_TTL = 40.0                                                # a poll counts as "watching" for this long

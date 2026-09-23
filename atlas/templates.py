@@ -432,7 +432,7 @@ SAMPLE_LEADS: dict[str, list[dict[str, str]]] = {
 
 # model tiers: which agents get the strong model. Provider stays whatever the desk runs on (OpenRouter by default).
 TIERS: dict[str, dict[str, Any]] = {
-    "free":     {"label": "Free",     "strong": [], "hermes_model": os.environ.get("ATLAS_FREE_MODEL", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"),
+    "free":     {"label": "Free",     "strong": [], "hermes_model": os.environ.get("ATLAS_FREE_MODEL", "nvidia/nemotron-3-super-120b-a12b:free"),
                  "note": "£0 per lead. Free MiniMax everywhere - inside the Hermes Agent runtime it still scored 3/3 on research, writing and data. Planning is weaker; drafts run long and get bounced by policy."},
     "frugal":   {"label": "Frugal",   "strong": [], "orchestrator": "anthropic/claude-haiku-4.5", "hermes_model": "anthropic/claude-haiku-4.5",
                  "note": "≈ 5-8p per lead. Claude Haiku orchestrates and powers Hermes Agent: fast, tidy, near-perfect on tool tasks."},
@@ -442,9 +442,9 @@ TIERS: dict[str, dict[str, Any]] = {
                  "note": "≈ 35p per lead. Sonnet everywhere, including inside Hermes Agent. Only where the words are the product."},
 }
 STRONG_MODEL = "anthropic/claude-sonnet-4.5"
-# The free-tier model. minimax/minimax-m3:free was withdrawn from OpenRouter on 15 Sep 2026; ling-3.0-flash-vl:free followed 15 Sep, withdrawn 24 Sep; nemotron-3-nano-omni:free takes
-# images and tool calls (reasoning is switched off per request in providers.MODEL_EXTRAS). Override with ATLAS_FREE_MODEL.
-FREE_MODEL = os.environ.get("ATLAS_FREE_MODEL", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free")
+# The free-tier model. minimax/minimax-m3:free was withdrawn from OpenRouter on 15 Sep 2026; ling-3.0-flash-vl:free followed 15 Sep, withdrawn 24 Sep; nemotron-3-super:free takes
+# over for text (nano-omni:free is flaky: empty replies, ignores the output block); eyes = VISION_MODEL in vision.py. Override with ATLAS_FREE_MODEL.
+FREE_MODEL = os.environ.get("ATLAS_FREE_MODEL", "nvidia/nemotron-3-super-120b-a12b:free")
 
 
 def apply_tier(agents: list[dict[str, Any]], tier: str) -> None:

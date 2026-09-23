@@ -10,7 +10,7 @@ workspace/bench/<stamp>/report.md + results.json. Engines:
   atlas         built-in specialist loop on the desk's OpenRouter model (--model to override)
   hermes        a running Hermes Agent instance (HERMES_AGENT_URL / HERMES_AGENT_KEY env, or --hermes-url/key)
 
-Add more models with --model nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free --model anthropic/claude-sonnet-4.5 (each becomes its
+Add more models with --model nvidia/nemotron-3-super-120b-a12b:free --model anthropic/claude-sonnet-4.5 (each becomes its
 own atlas-engine column). Everything is real output from real calls - no demo provider anywhere."""
 from __future__ import annotations
 
@@ -132,7 +132,7 @@ def main(argv=None) -> int:
     stamp = time.strftime("%Y%m%d-%H%M%S")
     out = WORKSPACE_DIR / "bench" / stamp
     out.mkdir(parents=True, exist_ok=True)
-    default_model = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+    default_model = "nvidia/nemotron-3-super-120b-a12b:free"
     columns: list[tuple[str, str, str]] = []            # (key, engine, model)
     for e in [x.strip() for x in a.engines.split(",") if x.strip()]:
         if e == "atlas":
