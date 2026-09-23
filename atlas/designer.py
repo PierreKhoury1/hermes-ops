@@ -109,7 +109,7 @@ Cameras (the desk's eyes)
 - Give any agent that reads or reports on the cameras the tools camera_ask and camera_events (camera_look for a fresh
   frame). Agents never narrate feeds themselves - the journal does that.
 - If the owner wants to try it without their own cameras, offer the sample footage and use "sample:" sources. When they
-  want several cameras on one place, use clips that share a site (the campus-* set is five angles of one campus).
+  want several cameras on one place, use clips that share a site (the campus-* set is five angles of one campus; the kitchen-* set is five angles of one real kitchen - use it for restaurants, cafes and food businesses).
 - One watcher per camera: give that agent "camera": "<camera name>" so it only reads its own feed."""
 
 
@@ -136,6 +136,12 @@ SAMPLE_LABELS = {
     "campus-carpark": "campus car park, cars and people walking through (same site, same 5 minutes)",
     "campus-drive": "campus approach road and paths, vehicles and pedestrians at distance (same site, same 5 minutes)",
     "campus-gym": "campus sports hall, court and bleachers, mostly empty (same site, same 5 minutes)",
+    # five synchronised cameras in ONE real kitchen (EPFL-Smart-Kitchen-30, faces blurred, one cook): a restaurant back-of-house desk
+    "kitchen-overview": "kitchen, whole room from the doorway corner, cook moving between stations (same kitchen as the other kitchen-* clips, same 5 minutes)",
+    "kitchen-wide": "kitchen, long view down the counters from the far end (same kitchen, same 5 minutes)",
+    "kitchen-stove": "kitchen, hob and pans from above (same kitchen, same 5 minutes)",
+    "kitchen-prep": "kitchen, chopping board and sink, close on the cook's hands (same kitchen, same 5 minutes)",
+    "kitchen-sink": "kitchen, sink and back counter, cook washing and plating (same kitchen, same 5 minutes)",
 }
 
 
@@ -143,7 +149,9 @@ SAMPLE_CAMERA_NAMES = {"corner-store_ezymart": "till", "retail-store": "shop-flo
                        "hotel-lobby_Browse4": "reception", "hotel-lobby_LeftBag": "lobby-seating",
                        "hotel-lobby_Meet_Crowd": "lobby-entrance", "hotel-lobby_Browse_WhileWaiting2": "lobby-waiting",
                        "restaurant-sushi-counter": "sushi-counter", "campus-lobby": "lobby", "campus-entrance": "entrance",
-                       "campus-carpark": "car-park", "campus-drive": "drive", "campus-gym": "gym"}
+                       "campus-carpark": "car-park", "campus-drive": "drive", "campus-gym": "gym",
+                       "kitchen-overview": "overview", "kitchen-wide": "counters", "kitchen-stove": "stove", "kitchen-prep": "prep",
+                       "kitchen-sink": "sink"}
 
 
 def sample_clips() -> dict[str, str]:
