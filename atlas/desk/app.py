@@ -771,8 +771,8 @@ def api_team_apply(did):
 
 # curated model catalogue for the landscape picker. `tools` = supports native tool-calling on OpenRouter.
 MODEL_CATALOG = [
-    {"id": "inclusionai/ling-3.0-flash-vl:free", "label": "Ling 3.0 Flash VL (free, vision)", "provider": "openrouter", "tools": True, "vision": True, "cost": "free tier", "engine": "atlas",
-     "note": "the free default since 15 Sep 2026 (MiniMax M3 free was withdrawn); reasoning switched off per request"},
+    {"id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "label": "Nemotron 3 Nano Omni (free, vision)", "provider": "openrouter", "tools": True, "vision": True, "cost": "free tier", "engine": "atlas",
+     "note": "the free default since 24 Sep 2026 (Ling 3.0 Flash VL free was withdrawn, MiniMax M3 free before it); reasoning switched off per request"},
     {"id": "nvidia/nemotron-3-super-120b-a12b:free", "label": "Nemotron 3 Super (free)", "provider": "openrouter", "tools": True, "cost": "free tier", "engine": "atlas"},
     {"id": "anthropic/claude-sonnet-4.5", "label": "Claude Sonnet 4.5", "provider": "openrouter", "tools": True, "vision": True, "cost": "≈£2.3/M in", "engine": "atlas", "paid": True},
     {"id": "anthropic/claude-haiku-4.5", "label": "Claude Haiku 4.5", "provider": "openrouter", "tools": True, "vision": True, "cost": "≈£0.8/M in", "engine": "atlas", "paid": True},
@@ -1749,6 +1749,154 @@ def api_vision_journal_stream():
 
     return Response(stream_with_context(gen()), mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"})
+
+
+# ---------------------------------------------------------------------------- object catalogue
+def _obj_public(o: dict[str, Any]) -> dict[str, Any]:
+    o = dict(o)
+    o.pop("emb", None)
+    o["crop_url"] = f"/api/objects/{o['id']}/crop.jpg?v={int(o.get('last_ts') or 0)}"
+    o["scene_url"] = f"/api/objects/{o['id']}/scene.jpg?v={int(o.get('last_ts') or 0)}"
+    o["seconds"] = round(max(0.0, (o.get("last_ts") or 0) - (o.get("first_ts") or 0)), 1)
+    o["path"] = (o.get("path") or [])[-120:]
+    return o
+
+
+def _object(oid: int) -> tuple[dict[str, Any], dict[str, Any]]:
+    desk = need_desk()
+    o = store.for_desk(desk["id"]).vision_object(oid)
+    if not o:
+        abort(404)
+    return desk, o
+
+
+@app.get("/desk/objects")
+def desk_objects_page():
+    if not current_user() and not OPEN:
+        return redirect("/login?next=/desk/objects")
+    did = request.args.get("desk", type=int)
+    if did:
+        u, d = current_user(), store.desk(did)
+        if d and (OPEN or (u and d["owner_id"] == u["id"])):
+            session["desk"] = did
+    return send_from_directory(STATIC_DIR, "objects.html")
+
+
+@app.get("/api/objects")
+def api_objects():
+    """The catalogue: every distinct thing the cameras saw. Filters: camera, label, status, verdict, minutes, watch."""
+    from .. import objects as OBJ
+    from .. import audit as AUD
+    desk = need_desk()
+    ds = store.for_desk(desk["id"])
+    a = request.args
+    minutes = a.get("minutes", type=float) or 0
+    rows = ds.vision_objects(camera=a.get("camera", ""), label=a.get("label", ""), status=a.get("status", ""),
+                             since=time.time() - minutes * 60 if minutes else 0, watch=a.get("watch") == "1",
+                             limit=min(1000, a.get("limit", type=int) or 400))
+    verdict = a.get("verdict", "")
+    if verdict:
+        rows = [o for o in rows if (o.get("verdict") or "unverified") == verdict]
+    elif a.get("rejected") != "1":
+        rows = [o for o in rows if o.get("verdict") != "rejected"]
+    everything = ds.vision_objects(limit=5000)
+    facets = {"camera": {}, "label": {}, "verdict": {}}
+    for o in everything:
+        for k, v in (("camera", o["camera"]), ("label", o["label"]), ("verdict", o.get("verdict") or "unverified")):
+            facets[k][v] = facets[k].get(v, 0) + 1
+    return jsonify({"objects": [_obj_public(o) for o in rows], "facets": facets, "workers": OBJ.statuses(desk["id"]),
+                    "audit": AUD.latest(), "live": _mode() == "live" and V.vlm_ready()})
+
+
+@app.get("/api/objects/<int:oid>")
+def api_object(oid):
+    from .. import objects as OBJ
+    desk, o = _object(oid)
+    ds = store.for_desk(desk["id"])
+    try:
+        sim = [_obj_public(x) for x in OBJ.similar(store, o)]
+    except Exception:
+        sim = []
+    return jsonify({"object": _obj_public(o), "notes": ds.object_notes(oid, 60), "similar": sim})
+
+
+@app.get("/api/objects/<int:oid>/<which>.jpg")
+def api_object_image(oid, which):
+    from .. import objects as OBJ
+    desk, o = _object(oid)
+    if which not in ("crop", "scene"):
+        abort(404)
+    p = OBJ.obj_dir(desk["id"]) / (f"{oid}.jpg" if which == "crop" else f"{oid}-scene.jpg")
+    if not p.is_file():
+        abort(404)
+    return send_file(p, mimetype="image/jpeg", max_age=0)
+
+
+def _object_live(desk: dict[str, Any], o: dict[str, Any]):
+    """(frame, box, vision model) for an object: the live frame while it is still in view, else its stored pictures."""
+    from .. import objects as OBJ
+    w = OBJ.worker(desk["id"], o["camera"])
+    frame, box = w.latest(o["id"]) if w else (None, None)
+    conn = next((c for c in store.connectors(desk["id"]) if c["kind"] == "camera" and c["name"] == o["camera"]), None)
+    return frame, box, str(((conn or {}).get("config") or {}).get("vlm_model") or "")
+
+
+@app.post("/api/objects/<int:oid>/call")
+def api_object_call(oid):
+    """Call an object: the vision model examines it now, and (watch on) keeps following it while it stays in view."""
+    from .. import objects as OBJ
+    desk, o = _object(oid)
+    d = request.get_json(silent=True) or {}
+    on = bool(d.get("on", True))
+    ds = store.for_desk(desk["id"])
+    ds.update_vision_object(oid, watch=1 if on else 0)
+    if not on:
+        return jsonify({"ok": True, "object": _obj_public(ds.vision_object(oid))})
+    _require_live()
+    frame, box, model = _object_live(desk, o)
+    try:
+        res = OBJ.call(store, o, model=model, frame=frame, box=box)
+    except Exception as exc:
+        ds.add_object_note(oid, "error", f"vision model unavailable: {str(exc)[:200]}")
+        return jsonify({"ok": False, "error": str(exc)[:300], "object": _obj_public(ds.vision_object(oid)), "notes": ds.object_notes(oid, 60)}), 502
+    return jsonify({"ok": True, "result": res, "object": _obj_public(ds.vision_object(oid)), "notes": ds.object_notes(oid, 60)})
+
+
+@app.post("/api/objects/<int:oid>/ask")
+def api_object_ask(oid):
+    from .. import objects as OBJ
+    desk, o = _object(oid)
+    q = str((request.get_json(force=True) or {}).get("question") or "").strip()[:500]
+    if not q:
+        return jsonify({"error": "empty question"}), 400
+    _require_live()
+    frame, box, model = _object_live(desk, o)
+    try:
+        text = OBJ.ask(store, o, q, model=model, frame=frame, box=box)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)[:300]}), 502
+    return jsonify({"ok": True, "answer": text, "notes": store.for_desk(desk["id"]).object_notes(oid, 60)})
+
+
+@app.post("/api/objects/<int:oid>/verdict")
+def api_object_verdict(oid):
+    """The owner's word is final: confirm the label, reject the object, or correct the label."""
+    desk, o = _object(oid)
+    d = request.get_json(force=True) or {}
+    v = str(d.get("verdict") or "")
+    if v not in ("confirmed", "rejected", ""):
+        return jsonify({"error": "verdict must be confirmed, rejected or empty"}), 400
+    ds = store.for_desk(desk["id"])
+    fields: dict[str, Any] = {"verdict": v, "verdict_by": "owner" if v else ""}
+    label = re.sub(r"[^a-z0-9 -]+", "", str(d.get("label") or "").lower()).strip()[:40]
+    if label and label != o["label"]:
+        fields.update({"label": label, "verdict": "confirmed", "verdict_by": "owner",
+                       "attrs": {**(o.get("attrs") or {}), "detector_label": o["label"]}})
+        ds.add_object_note(oid, "verify", f"Owner corrected the label: {o['label']} -> {label}.")
+    elif v:
+        ds.add_object_note(oid, "verify", f"Owner {v} this {o['label']}.")
+    ds.update_vision_object(oid, **fields)
+    return jsonify({"ok": True, "object": _obj_public(ds.vision_object(oid))})
 
 
 @app.post("/api/cameras/<int:cid>/watch")

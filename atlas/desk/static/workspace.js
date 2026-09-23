@@ -115,7 +115,7 @@ async function send(text){
   W.busy = false; $('#send').disabled = false; $('#orb').classList.remove('busy'); $('#orbstate').textContent = 'listening';
   if (!result || result.error) { d.textContent = (result && result.error) || 'Atlas did not answer. Try again.'; return; }
   const last = (result.transcript || []).filter(m => m.role === 'assistant').pop();
-  if (last && last.text && !d.textContent.trim()) d.textContent = last.text;
+  if (!d.textContent.trim()) d.textContent = (last && last.text) || result.text || 'Atlas did not answer. Try again.';
   setSugg(result.suggestions || []);
   if (result.blueprint && (result.blueprint.agents || []).length) await applyBlueprint(result.blueprint);
   $('#build-btn').disabled = !(W.bp && W.bp.agents && W.bp.agents.length);

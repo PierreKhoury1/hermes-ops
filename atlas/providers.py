@@ -176,10 +176,11 @@ class AnthropicProvider(Provider):
         return [{"role": "user", "content": content}]
 
 
-# Per-model request extras for OpenAI-compatible endpoints (prefix match on the model id). ling-3.0-flash-vl:free is a
+# Per-model request extras for OpenAI-compatible endpoints (prefix match on the model id). nemotron-3-nano-omni:free (and ling before it) is a
 # reasoning model: with reasoning on it burns max_tokens in hidden thought and returns content=null, so we switch it off.
 MODEL_EXTRAS: dict[str, dict[str, Any]] = {
     "inclusionai/ling-3.0": {"reasoning": {"enabled": False}},
+    "nvidia/nemotron-3-nano-omni": {"reasoning": {"enabled": False}},
 }
 
 
@@ -255,7 +256,7 @@ class OpenAICompatProvider(Provider):
                 text = str(exc)
                 code = text[:9]
                 upstream = code.startswith("HTTP 400") and "Provider returned error" in text     # OpenRouter wrapping a flaky upstream
-                retryable = upstream or any(code.startswith(f"HTTP {c}") for c in ("402", "429", "500", "502", "503", "529"))
+                retryable = upstream or any(code.startswith(f"HTTP {c}") for c in ("402", "404", "429", "500", "502", "503", "529"))   # 404 = model withdrawn from OpenRouter -> fallback_model
                 if not retryable:
                     raise
                 if upstream or code.startswith(("HTTP 500", "HTTP 502", "HTTP 503", "HTTP 529")):

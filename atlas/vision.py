@@ -37,7 +37,7 @@ from . import config as cfg
 MODELS_DIR = cfg.DATA_DIR / "models"
 SNAP_DIR = cfg.DATA_DIR / "snapshots"
 YOLO_WEIGHTS = os.environ.get("VISION_YOLO", str(MODELS_DIR / "yolov8n.pt"))
-DEFAULT_VLM = os.environ.get("VISION_MODEL", os.environ.get("ATLAS_FREE_MODEL", "inclusionai/ling-3.0-flash-vl:free"))   # free by default; set VISION_MODEL for paid eyes
+DEFAULT_VLM = os.environ.get("VISION_MODEL", os.environ.get("ATLAS_FREE_MODEL", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"))   # free by default; set VISION_MODEL for paid eyes
 DEFAULT_VLM_PROVIDER = os.environ.get("VISION_PROVIDER", "openrouter")
 MAX_SIDE = 960                      # frames are downscaled to this before detection / VLM
 FRAME_TIMEOUT = float(os.environ.get("VISION_GRAB_TIMEOUT", "12"))
@@ -313,6 +313,71 @@ class Detector:
 
 
 DETECTOR = Detector()
+
+
+class PreciseDetector:
+    """The detector for the RECORD (object catalogue, audits), not for the live picture.
+
+    Measured against human ground truth on the campus clips, the live detector (nano model, whole frame squeezed to
+    640 px) finds 63% of the people in a lobby and 4% of the people on a distant road: far objects are a few pixels
+    tall by the time the model sees them. This one looks at the full-resolution frame twice: once whole, and once as
+    overlapping tiles so small, distant objects reach the model at a usable size; the passes are merged with NMS.
+    Slower (hundreds of ms), so it runs at the analysis rate, never per displayed frame. One instance per consumer."""
+
+    def __init__(self, weights: str = "", tiles: tuple[int, int] | None = None, tile_size: int = 0, full_size: int = 0,
+                 conf: float = 0.0):
+        self.weights = weights or os.environ.get("VISION_YOLO_PRECISE", str(MODELS_DIR / "yolov8s.pt"))
+        t = os.environ.get("VISION_TILES", "2x2").lower().split("x")
+        self.tiles = tiles or (int(t[0]), int(t[1]))
+        self.tile_size = tile_size or int(os.environ.get("VISION_TILE_SIZE", "960"))
+        self.full_size = full_size or int(os.environ.get("VISION_FULL_SIZE", "1280"))
+        self.conf = conf or float(os.environ.get("VISION_PRECISE_CONF", "0.35"))
+        self.overlap = 0.2
+        self._model = None
+        self.error = ""
+
+    def _load(self):
+        if self._model is None:
+            from ultralytics import YOLO
+            Path(self.weights).parent.mkdir(parents=True, exist_ok=True)
+            self._model = YOLO(self.weights)
+        return self._model
+
+    def detect_bgr(self, frame) -> list[dict[str, Any]]:
+        """Detections on a BGR frame, boxes in that frame's pixels, best first."""
+        import torch
+        import torchvision
+        m = self._load()
+        h, w = frame.shape[:2]
+        nx, ny = self.tiles
+        boxes: list[list[float]] = []
+        scores: list[float] = []
+        clss: list[int] = []
+        if nx * ny > 1 and min(h, w) >= 480:
+            ov = self.overlap
+            tw, th = int(w / (nx - (nx - 1) * ov)), int(h / (ny - (ny - 1) * ov))
+            crops, offs = [], []
+            for j in range(ny):
+                for i in range(nx):
+                    x0, y0 = min(w - tw, int(i * tw * (1 - ov))), min(h - th, int(j * th * (1 - ov)))
+                    crops.append(frame[y0:y0 + th, x0:x0 + tw])
+                    offs.append((x0, y0))
+            for r, (x0, y0) in zip(m.predict(crops, imgsz=self.tile_size, conf=self.conf, verbose=False), offs):
+                for b in r.boxes:
+                    x1, y1, x2, y2 = [float(v) for v in b.xyxy[0]]
+                    cut = (x1 < 2 and x0 > 0) or (y1 < 2 and y0 > 0) or (x2 > tw - 2 and x0 + tw < w) or (y2 > th - 2 and y0 + th < h)
+                    if cut and (x2 - x1) * (y2 - y1) > 0.25 * tw * th:
+                        continue                           # a big object cut by the tile edge: the whole-frame pass owns it
+                    boxes.append([x1 + x0, y1 + y0, x2 + x0, y2 + y0]); scores.append(float(b.conf)); clss.append(int(b.cls))
+        for b in m.predict(frame, imgsz=self.full_size, conf=self.conf, verbose=False)[0].boxes:
+            boxes.append([float(v) for v in b.xyxy[0]]); scores.append(float(b.conf)); clss.append(int(b.cls))
+        if not boxes:
+            return []
+        B, S, C = torch.tensor(boxes), torch.tensor(scores), torch.tensor(clss)
+        keep = torchvision.ops.batched_nms(B, S, C, 0.5)
+        out = [{"label": m.names[int(C[k])], "conf": round(float(S[k]), 3), "box": [int(v) for v in B[k].tolist()]} for k in keep]
+        out.sort(key=lambda d: -d["conf"])
+        return out
 
 
 def counts(dets: list[dict[str, Any]]) -> dict[str, int]:
