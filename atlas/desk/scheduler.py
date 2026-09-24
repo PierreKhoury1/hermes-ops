@@ -17,6 +17,7 @@ import os
 import threading
 import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
 
 from .. import integrations as I
@@ -27,6 +28,19 @@ TICK = 20.0
 CAMERA_WORKERS = int(os.environ.get("CAMERA_WORKERS", "8"))   # cameras processed at the same time
 _busy: set[int] = set()
 _busy_lock = threading.Lock()
+# Camera ticks run on a FIXED pool of long-lived threads. A fresh thread per tick leaked ~7 native threads each time
+# (torch/OpenMP builds a worker team per calling thread and never frees it): ~3 threads/s with five cameras, 6,700
+# threads and 6 GB after a day. Persistent workers reuse their team.
+_pool: "ThreadPoolExecutor | None" = None
+_pool_lock = threading.Lock()
+
+
+def _camera_pool() -> "ThreadPoolExecutor":
+    global _pool
+    with _pool_lock:
+        if _pool is None:
+            _pool = ThreadPoolExecutor(max_workers=max(1, CAMERA_WORKERS), thread_name_prefix="camera")
+        return _pool
 MIN_CAMERA_S = 5                                         # fastest camera_watch cadence (the portal allows every_s >= 5)
 LIVE = lambda: True                                       # replaced by the app: is this desk on live models?
 _last_frame: dict[tuple[int, str], bytes] = {}          # (desk_id, camera) -> last raw frame (motion baseline)
@@ -76,6 +90,11 @@ def camera_tick(store, desk: dict[str, Any], conn: dict[str, Any], start_run: Ca
     elif q and not live:
         answer = "demo mode: " + V.counts_text(res["counts"]) + " in frame"
     res["answer"] = answer
+    try:                                                   # the object catalogue rides on the same schedule as the watch job
+        from .. import objects as OBJ
+        OBJ.ensure_worker(store, desk["id"], conn, live=live)
+    except Exception:
+        traceback.print_exc()
     # journal: a detailed written note when the scene changed or the max gap passed (the RAG log's real content)
     jc = JR.config(cfg)
     note, note_why = "", ""
@@ -267,8 +286,7 @@ def _loop(store, start_run, desk_for):
                         if job["id"] in _busy or len(_busy) >= CAMERA_WORKERS:
                             continue
                         _busy.add(job["id"])
-                    threading.Thread(target=_camera_worker, args=(store, job, start_run, desk_for), daemon=True,
-                                     name=f"camera-{job['id']}").start()
+                    _camera_pool().submit(_camera_worker, store, job, start_run, desk_for)
                     continue
                 _finish_job(store, job, start_run, desk_for)
         except Exception:
